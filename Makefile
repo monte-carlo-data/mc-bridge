@@ -14,7 +14,7 @@ test:
 
 # Build standalone macOS app
 build:
-	uv run pyinstaller mc_bridge.spec --clean
+	uv run pyinstaller mc_bridge.spec --clean -y
 
 # Open built app
 open:
