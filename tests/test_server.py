@@ -95,3 +95,31 @@ def test_get_connector_not_found(client: TestClient) -> None:
     response = client.get("/api/v1/connectors/non-existent-id")
     assert response.status_code == 404
 
+
+def test_execute_query_limit_exceeds_max(client_with_connector: TestClient) -> None:
+    """Test that limit > 1000 returns 400 error."""
+    response = client_with_connector.post(
+        "/api/v1/query",
+        json={
+            "connector_id": "test-snowflake",
+            "sql": "SELECT 1",
+            "limit": 1001,
+        },
+    )
+    assert response.status_code == 400
+    assert "Limit cannot exceed 1000" in response.json()["detail"]
+
+
+def test_execute_query_limit_at_max(client_with_connector: TestClient) -> None:
+    """Test that limit = 1000 is accepted (doesn't return 400)."""
+    response = client_with_connector.post(
+        "/api/v1/query",
+        json={
+            "connector_id": "test-snowflake",
+            "sql": "SELECT 1",
+            "limit": 1000,
+        },
+    )
+    # Will fail due to no actual connection, but not with 400
+    assert response.status_code == 200
+

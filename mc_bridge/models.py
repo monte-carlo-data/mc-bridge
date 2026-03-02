@@ -24,6 +24,8 @@ class QueryRequest(BaseModel):
     connector_id: str
     sql: str
     timeout_seconds: int = 300
+    limit: int = 100
+    offset: int = 0
 
 
 class QueryResult(BaseModel):

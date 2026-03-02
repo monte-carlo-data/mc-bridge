@@ -88,16 +88,27 @@ def test_connection(connector_id: str) -> TestConnectionResponse:
     )
 
 
+MAX_LIMIT = 1000
+DEFAULT_LIMIT = 100
+
+
 @app.post("/api/v1/query", response_model=QueryResponse)
 def execute_query(request: QueryRequest) -> QueryResponse:
     """Execute a SQL query on the specified connector."""
+    if request.limit > MAX_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Limit cannot exceed {MAX_LIMIT}",
+        )
+
     try:
         connector = _get_or_create_connector(request.connector_id)
 
         if not connector.is_connected:
             connector.connect()
 
-        result = connector.execute_query(request.sql, request.timeout_seconds)
+        wrapped_sql = f"SELECT * FROM ({request.sql}) LIMIT {request.limit} OFFSET {request.offset}"
+        result = connector.execute_query(wrapped_sql, request.timeout_seconds)
 
         return QueryResponse(success=True, result=result)
 
