@@ -6,7 +6,7 @@ install:
 
 # Run server in dev mode
 server:
-	uv run mc-bridge --server
+	uv run mc-bridge --server | tee server.log 2>&1
 
 # Run tests
 test:
@@ -63,4 +63,3 @@ help:
 	@echo "  format      - Format code"
 	@echo "  test-cors   - Test CORS headers"
 	@echo "  test-query  - Test query endpoint"
-
