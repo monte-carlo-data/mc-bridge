@@ -8,9 +8,12 @@ from mc_bridge.config import config_manager
 from mc_bridge.connectors.snowflake import SnowflakeConnector
 from mc_bridge.models import (
     ConnectorConfig,
+    DatabasesResponse,
     HealthResponse,
     QueryRequest,
     QueryResponse,
+    SchemasResponse,
+    TablesResponse,
     TestConnectionResponse,
 )
 from mc_bridge.security import get_cors_origins
@@ -88,6 +91,39 @@ def test_connection(connector_id: str) -> TestConnectionResponse:
     )
 
 
+@app.get("/api/v1/connectors/{connector_id}/databases", response_model=DatabasesResponse)
+def list_databases(connector_id: str) -> DatabasesResponse:
+    """List all accessible databases for a connector."""
+    connector = _get_or_create_connector(connector_id)
+    if not connector.is_connected:
+        connector.connect()
+    return DatabasesResponse(databases=connector.list_databases())
+
+
+@app.get(
+    "/api/v1/connectors/{connector_id}/databases/{database}/schemas",
+    response_model=SchemasResponse,
+)
+def list_schemas(connector_id: str, database: str) -> SchemasResponse:
+    """List schemas in a database."""
+    connector = _get_or_create_connector(connector_id)
+    if not connector.is_connected:
+        connector.connect()
+    return SchemasResponse(schemas=connector.list_schemas(database))
+
+
+@app.get(
+    "/api/v1/connectors/{connector_id}/databases/{database}/schemas/{schema}/tables",
+    response_model=TablesResponse,
+)
+def list_tables(connector_id: str, database: str, schema: str) -> TablesResponse:
+    """List tables in a schema."""
+    connector = _get_or_create_connector(connector_id)
+    if not connector.is_connected:
+        connector.connect()
+    return TablesResponse(tables=connector.list_tables(database, schema))
+
+
 MAX_LIMIT = 1000
 DEFAULT_LIMIT = 100
 
@@ -106,6 +142,10 @@ def execute_query(request: QueryRequest) -> QueryResponse:
 
         if not connector.is_connected:
             connector.connect()
+
+        # Set session context if database/schema provided
+        if request.database or request.schema_name:
+            connector.set_session_context(request.database, request.schema_name)
 
         wrapped_sql = f"SELECT * FROM ({request.sql}) LIMIT {request.limit} OFFSET {request.offset}"
         result = connector.execute_query(wrapped_sql, request.timeout_seconds)

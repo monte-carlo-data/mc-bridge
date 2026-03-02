@@ -98,3 +98,56 @@ class SnowflakeConnector(BaseConnector):
                 "error": str(e),
             }
 
+    def list_databases(self) -> list[str]:
+        """List all accessible databases."""
+        if not self._conn:
+            raise RuntimeError("Not connected to Snowflake. Call connect() first.")
+
+        cursor = self._conn.cursor()
+        try:
+            cursor.execute("SHOW DATABASES")
+            # Column 1 (index 1) is "name" in SHOW DATABASES output
+            return [row[1] for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+
+    def list_schemas(self, database: str) -> list[str]:
+        """List schemas in a database."""
+        if not self._conn:
+            raise RuntimeError("Not connected to Snowflake. Call connect() first.")
+
+        cursor = self._conn.cursor()
+        try:
+            cursor.execute(f"SHOW SCHEMAS IN DATABASE {database}")
+            # Column 1 (index 1) is "name" in SHOW SCHEMAS output
+            return [row[1] for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+
+    def list_tables(self, database: str, schema: str) -> list[str]:
+        """List tables in a schema."""
+        if not self._conn:
+            raise RuntimeError("Not connected to Snowflake. Call connect() first.")
+
+        cursor = self._conn.cursor()
+        try:
+            cursor.execute(f"SHOW TABLES IN {database}.{schema}")
+            # Column 1 (index 1) is "name" in SHOW TABLES output
+            return [row[1] for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+
+    def set_session_context(self, database: str | None, schema: str | None) -> None:
+        """Set session database/schema context for subsequent queries."""
+        if not self._conn:
+            raise RuntimeError("Not connected to Snowflake. Call connect() first.")
+
+        cursor = self._conn.cursor()
+        try:
+            if database:
+                cursor.execute(f"USE DATABASE {database}")
+            if schema:
+                cursor.execute(f"USE SCHEMA {schema}")
+        finally:
+            cursor.close()
+

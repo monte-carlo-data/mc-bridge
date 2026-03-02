@@ -23,6 +23,8 @@ class QueryRequest(BaseModel):
 
     connector_id: str
     sql: str
+    database: str | None = None  # Override default database context
+    schema_name: str | None = None  # Override default schema context
     timeout_seconds: int = 300
     limit: int = 100
     offset: int = 0
@@ -60,3 +62,20 @@ class TestConnectionResponse(BaseModel):
     message: str
     details: dict[str, Any] | None = None
 
+
+class DatabasesResponse(BaseModel):
+    """Response model for listing databases."""
+
+    databases: list[str]
+
+
+class SchemasResponse(BaseModel):
+    """Response model for listing schemas."""
+
+    schemas: list[str]
+
+
+class TablesResponse(BaseModel):
+    """Response model for listing tables."""
+
+    tables: list[str]
