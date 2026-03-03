@@ -16,7 +16,6 @@ from mc_bridge.models import (
     TablesResponse,
     TestConnectionResponse,
 )
-from mc_bridge.security import get_cors_origins
 
 app = FastAPI(
     title="MC Bridge",
@@ -27,8 +26,8 @@ app = FastAPI(
 # Add CORS middleware (must be added last to run first)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=get_cors_origins(),
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -154,4 +153,3 @@ def execute_query(request: QueryRequest) -> QueryResponse:
 
     except Exception as e:
         return QueryResponse(success=False, error=str(e))
-
