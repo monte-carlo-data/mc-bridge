@@ -16,7 +16,7 @@ from mc_bridge.models import (
     TablesResponse,
     TestConnectionResponse,
 )
-from mc_bridge.security import get_cors_origins
+from mc_bridge.security import CORS_EXTRA_ORIGINS, CORS_ORIGIN_REGEX
 
 app = FastAPI(
     title="MC Bridge",
@@ -27,7 +27,8 @@ app = FastAPI(
 # Add CORS middleware (must be added last to run first)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=get_cors_origins(),
+    allow_origins=CORS_EXTRA_ORIGINS,
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

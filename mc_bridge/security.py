@@ -52,14 +52,12 @@ class OriginValidationMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def get_cors_origins() -> list[str]:
-    """Get list of allowed CORS origins."""
-    return [
-        "https://getmontecarlo.com",
-        "https://app.getmontecarlo.com",
-        "https://local.getmontecarlo.com:3000",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-    ]
+CORS_ORIGIN_REGEX = r"^https://([a-zA-Z0-9-]+\.)?getmontecarlo\.com$"
+
+CORS_EXTRA_ORIGINS = [
+    "https://local.getmontecarlo.com:3000",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
