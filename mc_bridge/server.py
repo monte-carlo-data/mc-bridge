@@ -155,4 +155,3 @@ def execute_query(request: QueryRequest) -> QueryResponse:
 
     except Exception as e:
         return QueryResponse(success=False, error=str(e))
-
