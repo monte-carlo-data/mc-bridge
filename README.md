@@ -8,6 +8,17 @@ MC Bridge runs locally and provides an HTTP API (localhost:8765) that the MC web
 
 ## Installation
 
+### Quick Start (uvx)
+
+```bash
+# Run directly without installing
+uvx --from git+https://github.com/monte-carlo-data/mc-bridge.git mc-bridge-server
+```
+
+If no configuration exists, you'll see setup instructions.
+
+### Local Development
+
 ```bash
 make install
 ```

@@ -24,6 +24,7 @@ dev = [
 
 [project.scripts]
 mc-bridge = "mc_bridge.app:main"
+mc-bridge-server = "mc_bridge.app:run_server_only"
 
 [build-system]
 requires = ["hatchling"]

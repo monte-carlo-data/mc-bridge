@@ -13,13 +13,47 @@ Example:
         role: MY_ROLE
 """
 
+import sys
 from pathlib import Path
 
 import yaml
 
 from mc_bridge.models import ConnectorConfig
 
-CONFIG_FILE = Path.home() / ".montecarlodata" / "mc-bridge.yaml"
+CONFIG_DIR = Path.home() / ".montecarlodata"
+CONFIG_FILE = CONFIG_DIR / "mc-bridge.yaml"
+
+EXAMPLE_CONFIG = """\
+connectors:
+  my-snowflake:
+    account: myaccount.us-east-1    # Snowflake account identifier
+    user: user@company.com          # Your Snowflake username
+    warehouse: COMPUTE_WH           # Warehouse to use
+    database: MY_DB                 # (optional) Default database
+    schema: PUBLIC                  # (optional) Default schema
+    role: MY_ROLE                   # (optional) Role to use
+
+  # Add more connectors as needed:
+  # prod-snowflake:
+  #   account: prod.us-east-1
+  #   user: user@company.com
+  #   warehouse: PROD_WH
+"""
+
+
+def print_setup_instructions() -> None:
+    """Print configuration instructions and exit."""
+    print("\n" + "=" * 60)
+    print("MC Bridge - Configuration Required")
+    print("=" * 60)
+    print(f"\nNo configuration found at: {CONFIG_FILE}")
+    print("\nTo get started, create the config file:")
+    print(f"\n  mkdir -p {CONFIG_DIR}")
+    print(f"  cat > {CONFIG_FILE} << 'EOF'")
+    print(EXAMPLE_CONFIG + "EOF")
+    print("\nThen run mc-bridge again.")
+    print("=" * 60 + "\n")
+    sys.exit(1)
 
 
 class ConfigManager:
@@ -34,6 +68,19 @@ class ConfigManager:
             return {}
         with open(self.config_file) as f:
             return yaml.safe_load(f) or {}
+
+    def has_config(self) -> bool:
+        """Check if a valid configuration exists."""
+        if not self.config_file.exists():
+            return False
+        config = self._load_config()
+        connectors = config.get("connectors", {})
+        return len(connectors) > 0
+
+    def validate_or_exit(self) -> None:
+        """Validate config exists or print instructions and exit."""
+        if not self.has_config():
+            print_setup_instructions()
 
     def list_connectors(self) -> list[ConnectorConfig]:
         """List all connectors."""

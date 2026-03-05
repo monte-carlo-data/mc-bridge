@@ -141,8 +141,12 @@ class MCBridgeApp(rumps.App):
 
 
 def run_server_only() -> None:
-    """Run just the HTTP server without menu bar (for development)."""
+    """Run just the HTTP server without menu bar (for development/uvx)."""
+    from mc_bridge.config import config_manager
     from mc_bridge.server import app
+
+    # Validate config exists before starting
+    config_manager.validate_or_exit()
 
     print(f"MC Bridge v{__version__}")
     print(f"Starting server on http://{DEFAULT_HOST}:{DEFAULT_PORT}")
