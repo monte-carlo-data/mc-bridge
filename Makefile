@@ -1,8 +1,8 @@
-.PHONY: install server test build clean lint
+.PHONY: install server test build clean lint test-live
 
 # Install dependencies
 install:
-	uv sync --all-groups
+	uv sync --all-groups --all-extras
 
 # Run server in dev mode
 server:
@@ -50,6 +50,11 @@ test-query:
 		-H "Content-Type: application/json" \
 		-d '{"connector_id": "snowflake-dev", "sql": "SELECT CURRENT_USER()"}'
 
+# Live test connectors using mc-bridge.testing.yaml
+# Usage: make test-live [CONNECTOR=<id>]
+test-live:
+	uv run python scripts/test_live.py $(CONNECTOR)
+
 # Show help
 help:
 	@echo "Available targets:"
@@ -63,3 +68,4 @@ help:
 	@echo "  format      - Format code"
 	@echo "  test-cors   - Test CORS headers"
 	@echo "  test-query  - Test query endpoint"
+	@echo "  test-live   - Live test connectors from mc-bridge.testing.yaml [CONNECTOR=<id>]"

@@ -1,0 +1,25 @@
+# Copy to mc-bridge.testing.yaml and fill in your values.
+# mc-bridge.testing.yaml is gitignored.
+
+connectors:
+  # Snowflake — browser SSO
+  # test-snowflake:
+  #   account: myaccount.us-east-1
+  #   user: user@company.com
+  #   warehouse: COMPUTE_WH
+  #   database: MY_DB           # optional
+
+  # BigQuery — Application Default Credentials
+  # Run: gcloud auth application-default login
+  # test-bigquery:
+  #   type: bigquery
+  #   project: my-gcp-project
+  #   dataset: my_dataset       # optional
+
+  # Redshift — password auth
+  # test-redshift:
+  #   type: redshift
+  #   host: my-cluster.us-east-1.redshift.amazonaws.com
+  #   user: admin
+  #   database: mydb
+  #   password: mypassword
