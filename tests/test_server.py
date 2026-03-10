@@ -32,8 +32,8 @@ def client(mock_config_manager: ConfigManager) -> TestClient:
 
 
 @pytest.fixture
-def client_with_connector(temp_config_file: Path) -> TestClient:
-    """Create a test client with a pre-configured connector."""
+def client_with_snowflake(temp_config_file: Path) -> TestClient:
+    """Create a test client with a pre-configured Snowflake connector."""
     temp_config_file.write_text("""
 connectors:
   test-snowflake:
@@ -41,6 +41,30 @@ connectors:
     user: test@example.com
     warehouse: COMPUTE_WH
     database: TEST_DB
+""")
+    manager = ConfigManager(config_file=temp_config_file)
+    with patch("mc_bridge.server.config_manager", manager):
+        yield TestClient(app)
+
+
+@pytest.fixture
+def client_with_mixed(temp_config_file: Path) -> TestClient:
+    """Create a test client with connectors of all types."""
+    temp_config_file.write_text("""
+connectors:
+  test-snowflake:
+    account: test-account.us-east-1
+    user: test@example.com
+    warehouse: COMPUTE_WH
+  test-bigquery:
+    type: bigquery
+    project: my-project
+  test-redshift:
+    type: redshift
+    host: cluster.redshift.amazonaws.com
+    user: admin
+    database: mydb
+    password: pass
 """)
     manager = ConfigManager(config_file=temp_config_file)
     with patch("mc_bridge.server.config_manager", manager):
@@ -58,11 +82,18 @@ def test_health(client: TestClient) -> None:
     assert data["connector_count"] == 0
 
 
-def test_health_with_connector(client_with_connector: TestClient) -> None:
+def test_health_with_connector(client_with_snowflake: TestClient) -> None:
     """Test health check with configured connector."""
-    response = client_with_connector.get("/health")
+    response = client_with_snowflake.get("/health")
     assert response.status_code == 200
     assert response.json()["connector_count"] == 1
+
+
+def test_health_with_mixed_connectors(client_with_mixed: TestClient) -> None:
+    """Test health check with multiple connector types."""
+    response = client_with_mixed.get("/health")
+    assert response.status_code == 200
+    assert response.json()["connector_count"] == 3
 
 
 def test_list_connectors_empty(client: TestClient) -> None:
@@ -72,20 +103,32 @@ def test_list_connectors_empty(client: TestClient) -> None:
     assert response.json() == []
 
 
-def test_list_connectors(client_with_connector: TestClient) -> None:
+def test_list_connectors(client_with_snowflake: TestClient) -> None:
     """Test listing connectors."""
-    response = client_with_connector.get("/api/v1/connectors")
+    response = client_with_snowflake.get("/api/v1/connectors")
     assert response.status_code == 200
 
     connectors = response.json()
     assert len(connectors) == 1
     assert connectors[0]["id"] == "test-snowflake"
     assert connectors[0]["account"] == "test-account.us-east-1"
+    assert connectors[0]["type"] == "snowflake"
 
 
-def test_get_connector(client_with_connector: TestClient) -> None:
+def test_list_connectors_mixed(client_with_mixed: TestClient) -> None:
+    """Test listing connectors returns all types."""
+    response = client_with_mixed.get("/api/v1/connectors")
+    assert response.status_code == 200
+
+    connectors = response.json()
+    assert len(connectors) == 3
+    types = {c["type"] for c in connectors}
+    assert types == {"snowflake", "bigquery", "redshift"}
+
+
+def test_get_connector(client_with_snowflake: TestClient) -> None:
     """Test getting a connector by ID."""
-    response = client_with_connector.get("/api/v1/connectors/test-snowflake")
+    response = client_with_snowflake.get("/api/v1/connectors/test-snowflake")
     assert response.status_code == 200
     assert response.json()["id"] == "test-snowflake"
 
@@ -96,9 +139,9 @@ def test_get_connector_not_found(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_execute_query_limit_exceeds_max(client_with_connector: TestClient) -> None:
+def test_execute_query_limit_exceeds_max(client_with_snowflake: TestClient) -> None:
     """Test that limit > 1000 returns 400 error."""
-    response = client_with_connector.post(
+    response = client_with_snowflake.post(
         "/api/v1/query",
         json={
             "connector_id": "test-snowflake",
@@ -110,9 +153,9 @@ def test_execute_query_limit_exceeds_max(client_with_connector: TestClient) -> N
     assert "Limit cannot exceed 1000" in response.json()["detail"]
 
 
-def test_execute_query_limit_at_max(client_with_connector: TestClient) -> None:
+def test_execute_query_limit_at_max(client_with_snowflake: TestClient) -> None:
     """Test that limit = 1000 is accepted (doesn't return 400)."""
-    response = client_with_connector.post(
+    response = client_with_snowflake.post(
         "/api/v1/query",
         json={
             "connector_id": "test-snowflake",
@@ -122,4 +165,3 @@ def test_execute_query_limit_at_max(client_with_connector: TestClient) -> None:
     )
     # Will fail due to no actual connection, but not with 400
     assert response.status_code == 200
-

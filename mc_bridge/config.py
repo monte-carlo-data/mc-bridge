@@ -11,14 +11,31 @@ Example:
         database: MY_DB
         schema: PUBLIC
         role: MY_ROLE
+
+      my-bigquery:
+        type: bigquery
+        project: my-gcp-project
+        dataset: my_dataset
+
+      my-redshift:
+        type: redshift
+        host: my-cluster.us-east-1.redshift.amazonaws.com
+        user: admin
+        database: mydb
+        password: mypassword
 """
 
 import sys
 from pathlib import Path
+from typing import Union
 
 import yaml
 
-from mc_bridge.models import ConnectorConfig
+from mc_bridge.models import (
+    BigQueryConnectorConfig,
+    RedshiftConnectorConfig,
+    SnowflakeConnectorConfig,
+)
 
 CONFIG_DIR = Path.home() / ".montecarlodata"
 CONFIG_FILE = CONFIG_DIR / "mc-bridge.yaml"
@@ -33,20 +50,118 @@ connectors:
     database: MY_DB                 # (optional) Default database
     schema: PUBLIC                  # (optional) Default schema
     role: MY_ROLE                   # (optional) Role to use
+    # method: externalbrowser       # (default) Opens browser for SSO
+    # method: password              # Requires: password field
+    # method: keypair               # Requires: private_key_path (or private_key)
 
-  # Add more connectors as needed:
-  # prod-snowflake:
-  #   account: prod.us-east-1
-  #   user: user@company.com
-  #   warehouse: PROD_WH
+  # my-bigquery:
+  #   type: bigquery
+  #   project: my-gcp-project       # GCP project ID
+  #   dataset: my_dataset           # (optional) Default dataset
+  #   location: US                  # (optional) US or EU
+  #   # method: oauth               # (default) Uses gcloud auth application-default login
+  #   # method: service-account     # Requires: keyfile
+
+  # my-redshift:
+  #   type: redshift
+  #   host: cluster.region.redshift.amazonaws.com
+  #   user: admin
+  #   database: mydb
+  #   password: mypassword
+  #   schema: public                # (optional)
+  #   # method: database            # (default) User/password
+  #   # method: iam                 # Uses AWS credential chain
 """
+
+_SUPPORTED_DBT_TYPES = {"snowflake", "bigquery", "redshift"}
+
+AnyConnectorConfig = Union[
+    SnowflakeConnectorConfig, BigQueryConnectorConfig, RedshiftConnectorConfig
+]
+
+
+def _infer_connector_type(connector_data: dict) -> str:
+    """Infer connector type from fields. Defaults to snowflake for backwards compat."""
+    if "type" in connector_data:
+        return connector_data["type"]
+    if "project" in connector_data:
+        return "bigquery"
+    if "host" in connector_data:
+        return "redshift"
+    return "snowflake"
+
+
+def _build_snowflake_config(
+    connector_id: str, data: dict
+) -> SnowflakeConnectorConfig:
+    return SnowflakeConnectorConfig(
+        id=connector_id,
+        name=data.get("name", connector_id),
+        account=data["account"],
+        user=data["user"],
+        warehouse=data["warehouse"],
+        database=data.get("database"),
+        schema_name=data.get("schema"),
+        role=data.get("role"),
+        method=data.get("method", "externalbrowser"),
+        password=data.get("password"),
+        private_key=data.get("private_key"),
+        private_key_path=data.get("private_key_path"),
+        private_key_passphrase=data.get("private_key_passphrase"),
+    )
+
+
+def _build_bigquery_config(
+    connector_id: str, data: dict
+) -> BigQueryConnectorConfig:
+    return BigQueryConnectorConfig(
+        id=connector_id,
+        name=data.get("name", connector_id),
+        project=data["project"],
+        dataset=data.get("dataset"),
+        schema_name=data.get("schema"),
+        method=data.get("method", "oauth"),
+        keyfile=data.get("keyfile"),
+        location=data.get("location"),
+        job_execution_timeout_seconds=data.get("job_execution_timeout_seconds", 300),
+        maximum_bytes_billed=data.get("maximum_bytes_billed"),
+    )
+
+
+def _build_redshift_config(
+    connector_id: str, data: dict
+) -> RedshiftConnectorConfig:
+    return RedshiftConnectorConfig(
+        id=connector_id,
+        name=data.get("name", connector_id),
+        host=data["host"],
+        port=data.get("port", 5439),
+        user=data["user"],
+        database=data.get("database", data.get("dbname", "")),
+        schema_name=data.get("schema"),
+        method=data.get("method", "database"),
+        password=data.get("password", data.get("pass")),
+        iam_profile=data.get("iam_profile"),
+        cluster_id=data.get("cluster_id"),
+        region=data.get("region"),
+        connect_timeout=data.get("connect_timeout"),
+        role=data.get("role"),
+        sslmode=data.get("sslmode"),
+    )
+
+
+_CONFIG_BUILDERS: dict[str, callable] = {
+    "snowflake": _build_snowflake_config,
+    "bigquery": _build_bigquery_config,
+    "redshift": _build_redshift_config,
+}
 
 
 def _parse_dbt_profiles() -> dict[str, dict] | None:
-    """Parse dbt profiles.yml and extract Snowflake connection configs.
+    """Parse dbt profiles.yml and extract connection configs for supported types.
 
     Returns a dict mapping connector_id -> connector config dict,
-    or None if no Snowflake targets found.
+    or None if no supported targets found.
     """
     if not DBT_PROFILES_FILE.exists():
         return None
@@ -66,30 +181,21 @@ def _parse_dbt_profiles() -> dict[str, dict] | None:
         for target_name, target_config in outputs.items():
             if not isinstance(target_config, dict):
                 continue
-            if target_config.get("type") != "snowflake":
-                continue
 
-            # Required fields for mc-bridge
-            account = target_config.get("account")
-            user = target_config.get("user")
-            warehouse = target_config.get("warehouse")
-            if not all([account, user, warehouse]):
+            target_type = target_config.get("type")
+            if target_type not in _SUPPORTED_DBT_TYPES:
                 continue
 
             connector_id = f"{profile_name}-{target_name}"
-            connector: dict[str, str] = {
-                "account": account,
-                "user": user,
-                "warehouse": warehouse,
-            }
-
-            if target_config.get("database"):
-                connector["database"] = target_config["database"]
-            if target_config.get("schema"):
-                connector["schema"] = target_config["schema"]
-            if target_config.get("role"):
-                connector["role"] = target_config["role"]
-
+            # Copy all fields except type and threads, add type back explicitly
+            connector: dict = {"type": target_type}
+            connector.update(
+                {
+                    k: v
+                    for k, v in target_config.items()
+                    if k not in ("type", "threads")
+                }
+            )
             connectors[connector_id] = connector
 
     return connectors if connectors else None
@@ -109,9 +215,15 @@ def _prompt_dbt_import() -> bool:
     if not dbt_connectors:
         return False
 
-    print(f"\nFound {len(dbt_connectors)} Snowflake connection(s) in {DBT_PROFILES_FILE}:")
+    type_counts: dict[str, int] = {}
+    for cfg in dbt_connectors.values():
+        t = cfg.get("type", "snowflake")
+        type_counts[t] = type_counts.get(t, 0) + 1
+
+    summary = ", ".join(f"{count} {t}" for t, count in type_counts.items())
+    print(f"\nFound {len(dbt_connectors)} connection(s) in {DBT_PROFILES_FILE} ({summary}):")
     for name, cfg in dbt_connectors.items():
-        print(f"  - {name} ({cfg['account']}, user: {cfg['user']})")
+        print(f"  - {name} (type: {cfg.get('type', 'snowflake')})")
 
     try:
         answer = input("\nImport these connections? [Y/n] ").strip().lower()
@@ -173,28 +285,21 @@ class ConfigManager:
         if not self.has_config():
             print_setup_instructions()
 
-    def list_connectors(self) -> list[ConnectorConfig]:
+    def list_connectors(self) -> list[AnyConnectorConfig]:
         """List all connectors."""
         config = self._load_config()
         connectors_dict = config.get("connectors", {})
 
-        connectors = []
+        connectors: list[AnyConnectorConfig] = []
         for connector_id, connector_data in connectors_dict.items():
-            connectors.append(
-                ConnectorConfig(
-                    id=connector_id,
-                    name=connector_data.get("name", connector_id),
-                    account=connector_data["account"],
-                    user=connector_data["user"],
-                    warehouse=connector_data["warehouse"],
-                    database=connector_data.get("database"),
-                    schema_name=connector_data.get("schema"),
-                    role=connector_data.get("role"),
-                )
-            )
+            connector_type = _infer_connector_type(connector_data)
+            builder = _CONFIG_BUILDERS.get(connector_type)
+            if builder is None:
+                continue
+            connectors.append(builder(connector_id, connector_data))
         return connectors
 
-    def get_connector(self, connector_id: str) -> ConnectorConfig | None:
+    def get_connector(self, connector_id: str) -> AnyConnectorConfig | None:
         """Get a connector by ID."""
         for c in self.list_connectors():
             if c.id == connector_id:
@@ -204,4 +309,3 @@ class ConfigManager:
 
 # Global config manager instance
 config_manager = ConfigManager()
-

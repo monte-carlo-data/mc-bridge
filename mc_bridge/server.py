@@ -1,13 +1,14 @@
 """FastAPI HTTP server for MC Bridge."""
 
+from typing import Any
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from mc_bridge import __version__
-from mc_bridge.config import config_manager
-from mc_bridge.connectors.snowflake import SnowflakeConnector
+from mc_bridge.config import AnyConnectorConfig, config_manager
+from mc_bridge.connectors.base import BaseConnector
 from mc_bridge.models import (
-    ConnectorConfig,
     DatabasesResponse,
     HealthResponse,
     QueryRequest,
@@ -35,20 +36,42 @@ app.add_middleware(
 )
 
 
+def _create_connector(config: AnyConnectorConfig) -> BaseConnector:
+    """Create a connector instance based on config type. Lazy-imports drivers."""
+    connector_type = config.type
+
+    if connector_type == "snowflake":
+        from mc_bridge.connectors.snowflake import SnowflakeConnector
+
+        return SnowflakeConnector(config)
+    elif connector_type == "bigquery":
+        from mc_bridge.connectors.bigquery import BigQueryConnector
+
+        return BigQueryConnector(config)
+    elif connector_type == "redshift":
+        from mc_bridge.connectors.redshift import RedshiftConnector
+
+        return RedshiftConnector(config)
+    else:
+        raise ValueError(f"Unsupported connector type: {connector_type}")
+
+
 # Store active connectors in memory
-_active_connectors: dict[str, SnowflakeConnector] = {}
+_active_connectors: dict[str, BaseConnector] = {}
 
 
-def _get_or_create_connector(connector_id: str) -> SnowflakeConnector:
+def _get_or_create_connector(connector_id: str) -> BaseConnector:
     """Get an existing connector or create a new one."""
     if connector_id in _active_connectors:
         return _active_connectors[connector_id]
 
     config = config_manager.get_connector(connector_id)
     if not config:
-        raise HTTPException(status_code=404, detail=f"Connector '{connector_id}' not found in config")
+        raise HTTPException(
+            status_code=404, detail=f"Connector '{connector_id}' not found in config"
+        )
 
-    connector = SnowflakeConnector(config)
+    connector = _create_connector(config)
     _active_connectors[connector_id] = connector
     return connector
 
@@ -64,24 +87,24 @@ def health() -> HealthResponse:
     )
 
 
-@app.get("/api/v1/connectors", response_model=list[ConnectorConfig])
-def list_connectors() -> list[ConnectorConfig]:
+@app.get("/api/v1/connectors")
+def list_connectors() -> list[dict[str, Any]]:
     """List all configured connectors (from ~/.montecarlodata/mc-bridge.yaml)."""
-    return config_manager.list_connectors()
+    return [c.model_dump() for c in config_manager.list_connectors()]
 
 
-@app.get("/api/v1/connectors/{connector_id}", response_model=ConnectorConfig)
-def get_connector(connector_id: str) -> ConnectorConfig:
+@app.get("/api/v1/connectors/{connector_id}")
+def get_connector(connector_id: str) -> dict[str, Any]:
     """Get a connector by ID."""
     connector = config_manager.get_connector(connector_id)
     if not connector:
         raise HTTPException(status_code=404, detail=f"Connector '{connector_id}' not found")
-    return connector
+    return connector.model_dump()
 
 
 @app.post("/api/v1/connectors/{connector_id}/test", response_model=TestConnectionResponse)
 def test_connection(connector_id: str) -> TestConnectionResponse:
-    """Test a connector's connection (opens browser for SSO)."""
+    """Test a connector's connection."""
     connector = _get_or_create_connector(connector_id)
     result = connector.test_connection()
 

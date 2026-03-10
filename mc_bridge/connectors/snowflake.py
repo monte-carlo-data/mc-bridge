@@ -3,23 +3,30 @@
 import time
 from typing import Any
 
-import snowflake.connector
-from snowflake.connector import SnowflakeConnection
-from snowflake.connector.errors import DatabaseError, ProgrammingError
+try:
+    import snowflake.connector
+    from snowflake.connector import SnowflakeConnection
+    from snowflake.connector.errors import DatabaseError, ProgrammingError
+except ImportError:
+    raise ImportError(
+        "Install mc-bridge[snowflake] to use Snowflake connections: "
+        "pip install 'mc-bridge[snowflake]'"
+    )
 
 from mc_bridge.connectors.base import BaseConnector
-from mc_bridge.models import ConnectorConfig, QueryResult
+from mc_bridge.models import QueryResult, SnowflakeConnectorConfig
 
 
 class SnowflakeConnector(BaseConnector):
-    """Connector for Snowflake using browser-based SSO authentication."""
+    """Connector for Snowflake supporting multiple authentication methods."""
 
-    def __init__(self, config: ConnectorConfig) -> None:
+    def __init__(self, config: SnowflakeConnectorConfig) -> None:
         super().__init__(config)
+        self.config: SnowflakeConnectorConfig = config
         self._conn: SnowflakeConnection | None = None
 
     def connect(self) -> None:
-        """Establish connection to Snowflake using browser-based SSO."""
+        """Establish connection to Snowflake."""
         if self._connected and self._conn:
             return
 
@@ -27,7 +34,6 @@ class SnowflakeConnector(BaseConnector):
             "account": self.config.account,
             "user": self.config.user,
             "warehouse": self.config.warehouse,
-            "authenticator": "externalbrowser",  # Opens browser for SSO
         }
 
         if self.config.database:
@@ -37,8 +43,54 @@ class SnowflakeConnector(BaseConnector):
         if self.config.role:
             connect_params["role"] = self.config.role
 
+        method = self.config.method
+
+        if method == "externalbrowser":
+            connect_params["authenticator"] = "externalbrowser"
+
+        elif method == "password":
+            if not self.config.password:
+                raise ValueError("password required for method='password'")
+            connect_params["password"] = self.config.password
+
+        elif method == "keypair":
+            connect_params["private_key"] = self._load_private_key()
+
+        else:
+            raise ValueError(f"Unsupported Snowflake auth method: {method}")
+
         self._conn = snowflake.connector.connect(**connect_params)
         self._connected = True
+
+    def _load_private_key(self) -> bytes:
+        """Load and serialize private key to DER format for snowflake connector."""
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+        passphrase = (
+            self.config.private_key_passphrase.encode()
+            if self.config.private_key_passphrase
+            else None
+        )
+
+        if self.config.private_key_path:
+            with open(self.config.private_key_path, "rb") as f:
+                pem_data = f.read()
+            key = load_pem_private_key(pem_data, password=passphrase)
+        elif self.config.private_key:
+            key = load_pem_private_key(
+                self.config.private_key.encode(), password=passphrase
+            )
+        else:
+            raise ValueError(
+                "private_key or private_key_path required for method='keypair'"
+            )
+
+        return key.private_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
 
     def disconnect(self) -> None:
         """Close the Snowflake connection."""
@@ -63,7 +115,6 @@ class SnowflakeConnector(BaseConnector):
                 columns = [desc[0] for desc in cursor.description]
 
             rows = cursor.fetchall()
-            # Convert to list of lists for JSON serialization
             rows_list = [list(row) for row in rows]
 
             execution_time_ms = (time.perf_counter() - start_time) * 1000
@@ -150,4 +201,3 @@ class SnowflakeConnector(BaseConnector):
                 cursor.execute(f"USE SCHEMA {schema}")
         finally:
             cursor.close()
-
