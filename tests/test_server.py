@@ -71,6 +71,26 @@ connectors:
         yield TestClient(app)
 
 
+def test_dashboard(client: TestClient) -> None:
+    """Test dashboard landing page endpoint."""
+    response = client.get("/")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["message"] == "MC Bridge is running"
+    assert "version" in data
+    assert data["connector_count"] == 0
+    assert data["https"] is True
+    assert "ca_trusted" in data
+
+
+def test_dashboard_with_connectors(client_with_mixed: TestClient) -> None:
+    """Test dashboard shows correct connector count."""
+    response = client_with_mixed.get("/")
+    assert response.status_code == 200
+    assert response.json()["connector_count"] == 3
+
+
 def test_health(client: TestClient) -> None:
     """Test health check endpoint."""
     response = client.get("/health")

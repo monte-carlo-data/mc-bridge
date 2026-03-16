@@ -6,9 +6,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from mc_bridge import __version__
+from mc_bridge.certs import CERTS_DIR, is_ca_trusted
 from mc_bridge.config import AnyConnectorConfig, config_manager
 from mc_bridge.connectors.base import BaseConnector
 from mc_bridge.models import (
+    DashboardResponse,
     DatabasesResponse,
     HealthResponse,
     QueryRequest,
@@ -74,6 +76,31 @@ def _get_or_create_connector(connector_id: str) -> BaseConnector:
     connector = _create_connector(config)
     _active_connectors[connector_id] = connector
     return connector
+
+
+@app.get("/", response_model=DashboardResponse)
+def dashboard() -> DashboardResponse:
+    """Landing page showing bridge status."""
+    connectors = config_manager.list_connectors()
+    ca_cert_path = CERTS_DIR / "ca.pem"
+    ca_trusted = is_ca_trusted(ca_cert_path)
+
+    guidance = None
+    if not ca_trusted:
+        guidance = (
+            "CA certificate is not trusted. Run: "
+            "security add-trusted-cert -r trustRoot "
+            f"-k ~/Library/Keychains/login.keychain-db {ca_cert_path}"
+        )
+
+    return DashboardResponse(
+        message="MC Bridge is running",
+        version=__version__,
+        connector_count=len(connectors),
+        https=True,
+        ca_trusted=ca_trusted,
+        ca_trust_guidance=guidance,
+    )
 
 
 @app.get("/health", response_model=HealthResponse)
