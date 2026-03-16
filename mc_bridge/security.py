@@ -1,11 +1,16 @@
 """Security utilities for MC Bridge."""
 
+import logging
 from fnmatch import fnmatch
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+
+from mc_bridge.auth import validate_token
+
+logger = logging.getLogger(__name__)
 
 # Allowed origins for CORS and request validation
 ALLOWED_ORIGINS = [
@@ -49,6 +54,49 @@ class OriginValidationMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 status_code=403,
                 content={"error": "Forbidden", "detail": "Origin not allowed"},
+            )
+
+        return await call_next(request)
+
+
+# Paths exempt from JWT auth
+AUTH_EXEMPT_PATHS = {"/health", "/"}
+
+
+class BridgeAuthMiddleware(BaseHTTPMiddleware):
+    """Validates Authorization: Bearer <jwt> on all API endpoints."""
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if request.url.path in AUTH_EXEMPT_PATHS:
+            return await call_next(request)
+
+        # CORS preflight requests don't carry auth
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
+        auth_header = request.headers.get("authorization")
+        client_host = request.client.host if request.client else "unknown"
+
+        if not auth_header or not auth_header.startswith("Bearer "):
+            logger.warning("Missing/invalid auth header from %s", client_host)
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "error": "Unauthorized",
+                    "detail": "Missing or invalid Authorization header",
+                },
+            )
+
+        token = auth_header.removeprefix("Bearer ")
+        try:
+            claims = validate_token(token)
+            logger.info("Authenticated request from sub=%s", claims.sub)
+            request.state.auth_claims = claims
+        except Exception as e:
+            logger.warning("JWT validation failed from %s: %s", client_host, e)
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Unauthorized", "detail": str(e)},
             )
 
         return await call_next(request)

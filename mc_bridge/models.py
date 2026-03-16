@@ -102,11 +102,9 @@ class QueryResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """Response model for health check."""
+    """Response model for health check. Status-only for unauthed callers."""
 
     status: str
-    version: str
-    connector_count: int
 
 
 class DashboardResponse(BaseModel):
