@@ -10,6 +10,12 @@ import rumps
 import uvicorn
 
 from mc_bridge import __version__
+from mc_bridge.certs import (
+    CERTS_DIR,
+    ensure_certificates,
+    install_ca_to_system_trust,
+    is_ca_trusted,
+)
 
 
 def get_resource_path(relative_path: str) -> str | None:
@@ -84,8 +90,6 @@ class MCBridgeApp(rumps.App):
         if self.server_running:
             return
 
-        from mc_bridge.certs import ensure_certificates, install_ca_to_system_trust, is_ca_trusted
-
         ca_cert, server_cert, server_key = ensure_certificates()
 
         if not is_ca_trusted(ca_cert):
@@ -152,8 +156,6 @@ class MCBridgeApp(rumps.App):
 
 def _prompt_https_setup(ca_cert_path: Path, needs_ca_install: bool) -> bool:
     """Prompt user before HTTPS certificate setup. Returns True if user confirmed."""
-    from mc_bridge.certs import CERTS_DIR
-
     url = f"https://{DEFAULT_HOST}:{DEFAULT_PORT}"
     print("\nMC Bridge uses HTTPS with a local Certificate Authority (CA).")
     print("On first run, this will:")
@@ -173,12 +175,6 @@ def _prompt_https_setup(ca_cert_path: Path, needs_ca_install: bool) -> bool:
 
 def run_server_only() -> None:
     """Run just the HTTPS server without menu bar (for development/uvx)."""
-    from mc_bridge.certs import (
-        CERTS_DIR,
-        ensure_certificates,
-        install_ca_to_system_trust,
-        is_ca_trusted,
-    )
     from mc_bridge.config import config_manager
     from mc_bridge.server import app
 
