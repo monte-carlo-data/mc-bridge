@@ -13,10 +13,14 @@ ALLOWED_ORIGINS = [
     "https://*.getmontecarlo.com",
     "https://app.getmontecarlo.com",
     "https://local.getmontecarlo.com:3000",
-    "http://localhost:3000",  # Local MC development
-    "http://localhost:5173",  # Vite dev server
+    "http://localhost:3000",
+    "https://localhost:3000",
+    "http://localhost:5173",
+    "https://localhost:5173",
     "http://127.0.0.1:3000",
+    "https://127.0.0.1:3000",
     "http://127.0.0.1:5173",
+    "https://127.0.0.1:5173",
 ]
 
 
@@ -34,13 +38,11 @@ def is_origin_allowed(origin: str | None) -> bool:
 class OriginValidationMiddleware(BaseHTTPMiddleware):
     """Middleware to validate request origins."""
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         origin = request.headers.get("origin")
 
-        # Skip validation for health check endpoint
-        if request.url.path == "/health":
+        # Skip validation for health check and dashboard endpoints
+        if request.url.path in ("/health", "/"):
             return await call_next(request)
 
         if not is_origin_allowed(origin):
@@ -57,7 +59,11 @@ CORS_ORIGIN_REGEX = r"^https://([a-zA-Z0-9-]+\.)?getmontecarlo\.com$"
 CORS_EXTRA_ORIGINS = [
     "https://local.getmontecarlo.com:3000",
     "http://localhost:3000",
+    "https://localhost:3000",
     "http://localhost:5173",
+    "https://localhost:5173",
     "http://127.0.0.1:3000",
+    "https://127.0.0.1:3000",
     "http://127.0.0.1:5173",
+    "https://127.0.0.1:5173",
 ]

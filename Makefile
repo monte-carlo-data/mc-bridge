@@ -1,4 +1,4 @@
-.PHONY: install server test build clean lint test-live
+.PHONY: install server test build clean lint test-live reset-local
 
 # Install dependencies
 install:
@@ -38,15 +38,15 @@ format:
 # Test CORS
 test-cors:
 	@echo "=== Preflight OPTIONS ==="
-	@curl -si -X OPTIONS http://127.0.0.1:8765/health \
+	@curl -sk -X OPTIONS https://127.0.0.1:8765/health \
 		-H "Origin: https://local.getmontecarlo.com:3000" \
 		-H "Access-Control-Request-Method: GET" | head -12
 	@echo "\n=== GET /health ==="
-	@curl -s http://127.0.0.1:8765/health
+	@curl -sk https://127.0.0.1:8765/health
 
 # Test query
 test-query:
-	curl -s -X POST http://127.0.0.1:8765/api/v1/query \
+	curl -sk -X POST https://127.0.0.1:8765/api/v1/query \
 		-H "Content-Type: application/json" \
 		-d '{"connector_id": "snowflake-dev", "sql": "SELECT CURRENT_USER()"}'
 
@@ -54,6 +54,13 @@ test-query:
 # Usage: make test-live [CONNECTOR=<id>]
 test-live:
 	uv run python scripts/test_live.py $(CONNECTOR)
+
+# Remove local config + certs to test first-time setup
+reset-local:
+	rm -rf ~/.montecarlodata/certs
+	rm -f ~/.montecarlodata/mc-bridge.yaml
+	security delete-certificate -c "MC Bridge Local CA" 2>/dev/null || true
+	@echo "Cleared certs, config, and keychain trust. Run 'make server' to test first-time setup."
 
 # Show help
 help:
@@ -69,3 +76,4 @@ help:
 	@echo "  test-cors   - Test CORS headers"
 	@echo "  test-query  - Test query endpoint"
 	@echo "  test-live   - Live test connectors from mc-bridge.testing.yaml [CONNECTOR=<id>]"
+	@echo "  reset-local - Remove local config, certs, and keychain trust for first-time testing"

@@ -109,6 +109,17 @@ class HealthResponse(BaseModel):
     connector_count: int
 
 
+class DashboardResponse(BaseModel):
+    """Response model for dashboard landing page."""
+
+    message: str
+    version: str
+    connector_count: int
+    https: bool
+    ca_trusted: bool
+    ca_trust_guidance: str | None = None
+
+
 class TestConnectionResponse(BaseModel):
     """Response model for connection test."""
 
