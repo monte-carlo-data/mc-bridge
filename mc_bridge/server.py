@@ -19,7 +19,12 @@ from mc_bridge.models import (
     TablesResponse,
     TestConnectionResponse,
 )
-from mc_bridge.security import CORS_EXTRA_ORIGINS, CORS_ORIGIN_REGEX
+from mc_bridge.security import (
+    CORS_EXTRA_ORIGINS,
+    CORS_ORIGIN_REGEX,
+    BridgeAuthMiddleware,
+    OriginValidationMiddleware,
+)
 
 app = FastAPI(
     title="MC Bridge",
@@ -27,7 +32,9 @@ app = FastAPI(
     version=__version__,
 )
 
-# Add CORS middleware (must be added last to run first)
+# Middleware execution order is bottom-to-top: CORS runs first, then origin validation, then auth
+app.add_middleware(BridgeAuthMiddleware)
+app.add_middleware(OriginValidationMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_EXTRA_ORIGINS,
@@ -105,13 +112,8 @@ def dashboard() -> DashboardResponse:
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
-    """Health check endpoint."""
-    connectors = config_manager.list_connectors()
-    return HealthResponse(
-        status="ok",
-        version=__version__,
-        connector_count=len(connectors),
-    )
+    """Health check endpoint. Status-only (no version/connector info)."""
+    return HealthResponse(status="ok")
 
 
 @app.get("/api/v1/connectors")
