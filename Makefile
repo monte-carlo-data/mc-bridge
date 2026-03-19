@@ -1,4 +1,4 @@
-.PHONY: install server test build clean lint test-live reset-local
+.PHONY: install server test clean lint test-live reset-local
 
 # Install dependencies
 install:
@@ -12,17 +12,9 @@ server:
 test:
 	uv run pytest -v
 
-# Build standalone macOS app
-build:
-	uv run pyinstaller mc_bridge.spec --clean -y
-
-# Open built app
-open:
-	open "dist/MC Bridge.app"
-
 # Clean build artifacts
 clean:
-	rm -rf build dist __pycache__ .pytest_cache
+	rm -rf dist __pycache__ .pytest_cache
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 
@@ -68,8 +60,6 @@ help:
 	@echo "  install     - Install dependencies"
 	@echo "  server      - Run server in dev mode"
 	@echo "  test        - Run tests"
-	@echo "  build       - Build standalone macOS app"
-	@echo "  open        - Open built app"
 	@echo "  clean       - Clean build artifacts"
 	@echo "  lint        - Run linter"
 	@echo "  format      - Format code"
