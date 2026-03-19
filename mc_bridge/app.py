@@ -19,26 +19,10 @@ from mc_bridge.certs import (
 
 
 def get_resource_path(relative_path: str) -> str | None:
-    """Get path to resource, works for dev and PyInstaller bundle."""
-    # Check multiple locations for the resource
-    candidates = []
-
-    # PyInstaller onefile mode
-    if hasattr(sys, "_MEIPASS"):
-        candidates.append(Path(sys._MEIPASS) / relative_path)
-
-    # PyInstaller .app bundle - resources in Contents/Resources
-    if getattr(sys, "frozen", False):
-        # sys.executable is Contents/MacOS/mc-bridge
-        bundle_dir = Path(sys.executable).parent.parent / "Resources"
-        candidates.append(bundle_dir / relative_path)
-
-    # Dev mode - relative to project root
-    candidates.append(Path(__file__).parent.parent / relative_path)
-
-    for path in candidates:
-        if path.exists():
-            return str(path)
+    """Get path to resource, relative to project root."""
+    path = Path(__file__).parent.parent / relative_path
+    if path.exists():
+        return str(path)
     return None
 
 
