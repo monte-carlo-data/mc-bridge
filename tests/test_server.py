@@ -3,7 +3,7 @@
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import jwt as pyjwt
 import pytest
@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
+from mc_bridge import __version__
 from mc_bridge.auth import EXPECTED_AUDIENCE, EXPECTED_ISSUER
 from mc_bridge.config import ConfigManager
 from mc_bridge.server import app
@@ -256,3 +257,23 @@ def test_execute_query_limit_at_max(
     )
     # Will fail due to no actual connection, but not with 400
     assert response.status_code == 200
+
+
+def test_execute_query_prepends_version_comment(
+    client_with_snowflake: TestClient, auth_header: dict[str, str]
+) -> None:
+    """Test that queries are tagged with the mc-bridge version comment."""
+    mock_connector = MagicMock()
+    mock_connector.is_connected = True
+    mock_connector.execute_query.return_value = {"columns": [], "rows": []}
+
+    with patch("mc_bridge.server._get_or_create_connector", return_value=mock_connector):
+        client_with_snowflake.post(
+            "/api/v1/query",
+            json={"connector_id": "test-snowflake", "sql": "SELECT 1"},
+            headers=auth_header,
+        )
+
+    actual_sql = mock_connector.execute_query.call_args[0][0]
+    expected_comment = f"-- query executed by mc-bridge {__version__}"
+    assert actual_sql.startswith(expected_comment)

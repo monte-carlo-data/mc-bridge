@@ -200,7 +200,11 @@ def execute_query(request: QueryRequest) -> QueryResponse:
         if request.database or request.schema_name:
             connector.set_session_context(request.database, request.schema_name)
 
-        wrapped_sql = f"SELECT * FROM ({request.sql}) LIMIT {request.limit} OFFSET {request.offset}"
+        comment = f"-- query executed by mc-bridge {__version__}"
+        select_wrapper = (
+            f"SELECT * FROM ({request.sql}) LIMIT {request.limit} OFFSET {request.offset}"
+        )
+        wrapped_sql = f"{comment}\n{select_wrapper}"
         result = connector.execute_query(wrapped_sql, request.timeout_seconds)
 
         return QueryResponse(success=True, result=result)
