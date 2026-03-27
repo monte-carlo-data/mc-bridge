@@ -4,8 +4,9 @@
 install:
 	uv sync --all-groups --all-extras
 
-# Run server in dev mode
+# Run server in dev mode (installs all extras so connector drivers are available)
 server:
+	uv sync --all-extras
 	uv run mc-bridge --server | tee server.log 2>&1
 
 # Run tests
