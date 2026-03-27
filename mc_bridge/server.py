@@ -1,7 +1,17 @@
-"""FastAPI HTTP server for MC Bridge."""
+"""FastAPI HTTP server for MC Bridge.
 
+Single-threaded: sync endpoints run sequentially via a 1-thread limiter set at startup.
+This prevents parallel requests from triggering multiple browser auth windows simultaneously.
+"""
+
+import logging
+import time
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from typing import Any
 
+import anyio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -26,10 +36,70 @@ from mc_bridge.security import (
     OriginValidationMiddleware,
 )
 
+logger = logging.getLogger(__name__)
+
+CONNECTION_COOLDOWN_SECONDS = 25
+
+
+@dataclass
+class _ConnectorCooldown:
+    """Tracks connection failure cooldown per connector."""
+
+    failed_at: float
+    error: str
+
+
+@dataclass
+class ConnectionCooldownTracker:
+    """Prevents repeated connection attempts after a failure.
+
+    When connect() fails for a connector, subsequent requests within
+    CONNECTION_COOLDOWN_SECONDS return the cached error immediately
+    instead of retrying (which would re-trigger browser auth prompts).
+    """
+
+    _cooldowns: dict[str, _ConnectorCooldown] = field(default_factory=dict)
+
+    def record_failure(self, connector_id: str, error: str) -> None:
+        self._cooldowns[connector_id] = _ConnectorCooldown(failed_at=time.monotonic(), error=error)
+
+    def check(self, connector_id: str) -> str | None:
+        """Return cached error message if still in cooldown, else None."""
+        cooldown = self._cooldowns.get(connector_id)
+        if cooldown is None:
+            return None
+        elapsed = time.monotonic() - cooldown.failed_at
+        if elapsed < CONNECTION_COOLDOWN_SECONDS:
+            remaining = CONNECTION_COOLDOWN_SECONDS - elapsed
+            return (
+                f"Connection failed {elapsed:.0f}s ago (cooldown {remaining:.0f}s remaining): "
+                f"{cooldown.error}"
+            )
+        # Cooldown expired — allow retry
+        del self._cooldowns[connector_id]
+        return None
+
+    def clear(self, connector_id: str) -> None:
+        self._cooldowns.pop(connector_id, None)
+
+
+connection_cooldowns = ConnectionCooldownTracker()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Limit sync endpoint thread pool to 1 so requests are processed sequentially."""
+    limiter = anyio.to_thread.current_default_thread_limiter()
+    limiter.total_tokens = 1
+    logger.info("Thread pool limited to 1 (single-threaded mode)")
+    yield
+
+
 app = FastAPI(
     title="MC Bridge",
     description="Local bridge for Monte Carlo SaaS to connect to data sources",
     version=__version__,
+    lifespan=lifespan,
 )
 
 # Middleware execution order is bottom-to-top: CORS runs first, then origin validation, then auth
@@ -82,6 +152,27 @@ def _get_or_create_connector(connector_id: str) -> BaseConnector:
 
     connector = _create_connector(config)
     _active_connectors[connector_id] = connector
+    return connector
+
+
+def _ensure_connected(connector_id: str) -> BaseConnector:
+    """Get connector and ensure it's connected, respecting cooldown on failures.
+
+    If a previous connect() failed within CONNECTION_COOLDOWN_SECONDS, raises
+    immediately without retrying. On successful connect, clears any cooldown.
+    """
+    cooldown_error = connection_cooldowns.check(connector_id)
+    if cooldown_error:
+        raise ConnectionError(cooldown_error)
+
+    connector = _get_or_create_connector(connector_id)
+    if not connector.is_connected:
+        try:
+            connector.connect()
+            connection_cooldowns.clear(connector_id)
+        except Exception as e:
+            connection_cooldowns.record_failure(connector_id, str(e))
+            raise
     return connector
 
 
@@ -147,9 +238,7 @@ def test_connection(connector_id: str) -> TestConnectionResponse:
 @app.get("/api/v1/connectors/{connector_id}/databases", response_model=DatabasesResponse)
 def list_databases(connector_id: str) -> DatabasesResponse:
     """List all accessible databases for a connector."""
-    connector = _get_or_create_connector(connector_id)
-    if not connector.is_connected:
-        connector.connect()
+    connector = _ensure_connected(connector_id)
     return DatabasesResponse(databases=connector.list_databases())
 
 
@@ -159,9 +248,7 @@ def list_databases(connector_id: str) -> DatabasesResponse:
 )
 def list_schemas(connector_id: str, database: str) -> SchemasResponse:
     """List schemas in a database."""
-    connector = _get_or_create_connector(connector_id)
-    if not connector.is_connected:
-        connector.connect()
+    connector = _ensure_connected(connector_id)
     return SchemasResponse(schemas=connector.list_schemas(database))
 
 
@@ -171,9 +258,7 @@ def list_schemas(connector_id: str, database: str) -> SchemasResponse:
 )
 def list_tables(connector_id: str, database: str, schema: str) -> TablesResponse:
     """List tables in a schema."""
-    connector = _get_or_create_connector(connector_id)
-    if not connector.is_connected:
-        connector.connect()
+    connector = _ensure_connected(connector_id)
     return TablesResponse(tables=connector.list_tables(database, schema))
 
 
@@ -191,10 +276,7 @@ def execute_query(request: QueryRequest) -> QueryResponse:
         )
 
     try:
-        connector = _get_or_create_connector(request.connector_id)
-
-        if not connector.is_connected:
-            connector.connect()
+        connector = _ensure_connected(request.connector_id)
 
         # Set session context if database/schema provided
         if request.database or request.schema_name:

@@ -277,3 +277,103 @@ def test_execute_query_prepends_version_comment(
     actual_sql = mock_connector.execute_query.call_args[0][0]
     expected_comment = f"-- query executed by mc-bridge {__version__}"
     assert actual_sql.startswith(expected_comment)
+
+
+# --- Single-threaded lifespan ---
+
+
+@pytest.mark.anyio
+async def test_lifespan_sets_thread_limiter_to_one() -> None:
+    """Lifespan event limits sync thread pool to 1 for sequential request processing."""
+    import anyio
+
+    from mc_bridge.server import lifespan
+
+    # Lifespan needs an app arg but only uses it for the yield
+    async with lifespan(None):  # type: ignore[arg-type]
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        assert limiter.total_tokens == 1
+
+
+# --- Connection cooldown ---
+
+
+def test_cooldown_tracker_no_failure() -> None:
+    """check() returns None when no failure has been recorded."""
+    from mc_bridge.server import ConnectionCooldownTracker
+
+    tracker = ConnectionCooldownTracker()
+    assert tracker.check("my-connector") is None
+
+
+def test_cooldown_tracker_blocks_during_cooldown() -> None:
+    """check() returns error message during the cooldown window."""
+    from mc_bridge.server import ConnectionCooldownTracker
+
+    tracker = ConnectionCooldownTracker()
+    tracker.record_failure("my-connector", "auth failed")
+
+    result = tracker.check("my-connector")
+    assert result is not None
+    assert "auth failed" in result
+    assert "cooldown" in result
+
+
+def test_cooldown_tracker_expires() -> None:
+    """check() returns None after cooldown expires."""
+    from mc_bridge.server import ConnectionCooldownTracker, _ConnectorCooldown
+
+    tracker = ConnectionCooldownTracker()
+    # Backdate the failure to 30s ago (past 25s cooldown)
+    tracker._cooldowns["my-connector"] = _ConnectorCooldown(
+        failed_at=time.monotonic() - 30, error="auth failed"
+    )
+
+    assert tracker.check("my-connector") is None
+
+
+def test_cooldown_tracker_clear() -> None:
+    """clear() removes cooldown so subsequent check() returns None."""
+    from mc_bridge.server import ConnectionCooldownTracker
+
+    tracker = ConnectionCooldownTracker()
+    tracker.record_failure("my-connector", "auth failed")
+    tracker.clear("my-connector")
+
+    assert tracker.check("my-connector") is None
+
+
+def test_query_returns_cooldown_error_without_reconnecting(
+    client_with_snowflake: TestClient, auth_header: dict[str, str]
+) -> None:
+    """After a connect failure, subsequent queries return cached error without retrying."""
+    from mc_bridge.server import connection_cooldowns
+
+    mock_connector = MagicMock()
+    mock_connector.is_connected = False
+    mock_connector.connect.side_effect = RuntimeError("browser auth timed out")
+
+    with patch("mc_bridge.server._get_or_create_connector", return_value=mock_connector):
+        # First request triggers connect(), which fails
+        resp1 = client_with_snowflake.post(
+            "/api/v1/query",
+            json={"connector_id": "test-snowflake", "sql": "SELECT 1"},
+            headers=auth_header,
+        )
+        assert resp1.json()["success"] is False
+        assert "browser auth timed out" in resp1.json()["error"]
+        assert mock_connector.connect.call_count == 1
+
+        # Second request should hit cooldown — no connect() retry
+        resp2 = client_with_snowflake.post(
+            "/api/v1/query",
+            json={"connector_id": "test-snowflake", "sql": "SELECT 1"},
+            headers=auth_header,
+        )
+        assert resp2.json()["success"] is False
+        assert "cooldown" in resp2.json()["error"]
+        # connect() was NOT called again
+        assert mock_connector.connect.call_count == 1
+
+    # Clean up global state
+    connection_cooldowns.clear("test-snowflake")
