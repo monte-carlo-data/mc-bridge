@@ -12,10 +12,10 @@ MC Bridge runs locally and provides an HTTP API (localhost:8765) that the MC web
 
 ```bash
 # Snowflake only
-uvx --from "mc-bridge[snowflake] @ git+https://github.com/monte-carlo-data/mc-bridge.git" mc-bridge-server
+uvx --from "mc-bridge[snowflake] @ git+https://github.com/monte-carlo-data/mc-bridge.git" mc-bridge
 
 # All warehouses
-uvx --from "mc-bridge[all] @ git+https://github.com/monte-carlo-data/mc-bridge.git" mc-bridge-server
+uvx --from "mc-bridge[all] @ git+https://github.com/monte-carlo-data/mc-bridge.git" mc-bridge
 ```
 
 If no configuration exists, you'll see setup instructions. If `~/.dbt/profiles.yml` exists, mc-bridge will offer to import your dbt connections (Snowflake, BigQuery, and Redshift).
@@ -96,14 +96,6 @@ make test-query
 make test      # Run tests
 make lint      # Run linter
 make format    # Format code
-```
-
-## Building Standalone App
-
-```bash
-make build     # Build app
-make open      # Open built app
-# Output: dist/MC Bridge.app
 ```
 
 ## Security

@@ -7,7 +7,6 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn>=0.27.0",
-    "rumps>=0.4.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
     "pyyaml>=6.0.3",
@@ -33,7 +32,6 @@ dev = [
 
 [project.scripts]
 mc-bridge = "mc_bridge.app:main"
-mc-bridge-server = "mc_bridge.app:run_server_only"
 
 [build-system]
 requires = ["hatchling"]
@@ -57,6 +55,5 @@ pythonpath = ["."]
 dev = [
     "httpx>=0.28.1",
     "pillow>=12.1.1",
-    "pyinstaller>=6.19.0",
     "pytest>=9.0.2",
 ]
