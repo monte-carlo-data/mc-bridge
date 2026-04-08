@@ -32,6 +32,7 @@ dev = [
 
 [project.scripts]
 mc-bridge = "mc_bridge.app:main"
+mc-bridge-server = "mc_bridge.app:main"
 
 [build-system]
 requires = ["hatchling"]
