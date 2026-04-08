@@ -1,4 +1,4 @@
-.PHONY: install server test build clean lint test-live reset-local
+.PHONY: install server test clean lint test-live reset-local
 
 # Install dependencies
 install:
@@ -7,19 +7,11 @@ install:
 # Run server in dev mode (installs all extras so connector drivers are available)
 server:
 	uv sync --all-extras
-	uv run mc-bridge --server | tee server.log 2>&1
+	uv run mc-bridge | tee server.log 2>&1
 
 # Run tests
 test:
 	uv run pytest -v
-
-# Build standalone macOS app
-build:
-	uv run pyinstaller mc_bridge.spec --clean -y
-
-# Open built app
-open:
-	open "dist/MC Bridge.app"
 
 # Clean build artifacts
 clean:
@@ -60,8 +52,7 @@ test-live:
 reset-local:
 	rm -rf ~/.montecarlodata/certs
 	rm -f ~/.montecarlodata/mc-bridge.yaml
-	security delete-certificate -c "MC Bridge Local CA" 2>/dev/null || true
-	@echo "Cleared certs, config, and keychain trust. Run 'make server' to test first-time setup."
+	@echo "Cleared certs and config. Run 'make server' to test first-time setup."
 
 # Show help
 help:
@@ -69,12 +60,10 @@ help:
 	@echo "  install     - Install dependencies"
 	@echo "  server      - Run server in dev mode"
 	@echo "  test        - Run tests"
-	@echo "  build       - Build standalone macOS app"
-	@echo "  open        - Open built app"
 	@echo "  clean       - Clean build artifacts"
 	@echo "  lint        - Run linter"
 	@echo "  format      - Format code"
 	@echo "  test-cors   - Test CORS headers"
 	@echo "  test-query  - Test query endpoint"
 	@echo "  test-live   - Live test connectors from mc-bridge.testing.yaml [CONNECTOR=<id>]"
-	@echo "  reset-local - Remove local config, certs, and keychain trust for first-time testing"
+	@echo "  reset-local - Remove local config and certs for first-time testing"

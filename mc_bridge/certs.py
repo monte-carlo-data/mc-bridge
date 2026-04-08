@@ -4,6 +4,7 @@ import datetime
 import ipaddress
 import logging
 import subprocess
+import sys
 from pathlib import Path
 
 from cryptography import x509
@@ -24,15 +25,31 @@ CA_VALIDITY_YEARS = 10
 SERVER_VALIDITY_YEARS = 1
 RENEWAL_THRESHOLD_DAYS = 30
 
+IS_WINDOWS = sys.platform == "win32"
+
+
+def _secure_mkdir(path: Path) -> None:
+    """Create directory with restrictive permissions (no-op for mode on Windows)."""
+    if IS_WINDOWS:
+        path.mkdir(parents=True, exist_ok=True)
+    else:
+        path.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+
+def _secure_chmod(path: Path, mode: int) -> None:
+    """Set file permissions (no-op on Windows — relies on NTFS user-private dirs)."""
+    if not IS_WINDOWS:
+        path.chmod(mode)
+
 
 def ensure_certificates() -> tuple[Path, Path, Path]:
     """Ensure valid CA + server certs exist. Returns (ca_cert, server_cert, server_key).
 
-    Creates CERTS_DIR with mode 0o700 if missing. Generates root CA (10yr validity)
+    Creates CERTS_DIR if missing. Generates root CA (10yr validity)
     if ca.pem/ca-key.pem missing. Generates server cert (1yr validity, SAN: localhost
     + 127.0.0.1) if missing or expiring within 30 days.
     """
-    CERTS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _secure_mkdir(CERTS_DIR)
 
     ca_cert_path = CERTS_DIR / CA_CERT_FILE
     ca_key_path = CERTS_DIR / CA_KEY_FILE
@@ -105,7 +122,7 @@ def _generate_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
             serialization.NoEncryption(),
         )
     )
-    ca_key_path.chmod(0o600)
+    _secure_chmod(ca_key_path, 0o600)
 
     ca_cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
 
@@ -156,7 +173,7 @@ def _generate_server_cert(
             serialization.NoEncryption(),
         )
     )
-    server_key_path.chmod(0o600)
+    _secure_chmod(server_key_path, 0o600)
 
     server_cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
 
@@ -183,10 +200,23 @@ def _load_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
 
 
 def install_ca_to_system_trust(ca_cert_path: Path) -> bool:
-    """Install CA in macOS login keychain via `security add-trusted-cert`.
+    """Install CA cert into the OS trust store.
 
-    Returns True on success, False on failure (user cancelled password prompt).
+    macOS: security add-trusted-cert (login keychain)
+    Windows: certutil -addstore Root (may need admin)
+    Linux: prints manual instructions (needs sudo)
+
+    Returns True on success, False on failure.
     """
+    if sys.platform == "darwin":
+        return _install_ca_macos(ca_cert_path)
+    elif IS_WINDOWS:
+        return _install_ca_windows(ca_cert_path)
+    else:
+        return _install_ca_linux(ca_cert_path)
+
+
+def _install_ca_macos(ca_cert_path: Path) -> bool:
     try:
         subprocess.run(
             [
@@ -209,10 +239,49 @@ def install_ca_to_system_trust(ca_cert_path: Path) -> bool:
         return False
 
 
+def _install_ca_windows(ca_cert_path: Path) -> bool:
+    try:
+        subprocess.run(
+            ["certutil", "-addstore", "Root", str(ca_cert_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        logger.info("CA certificate installed to Windows Root store")
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.warning("Failed to install CA certificate: %s", e.stderr)
+        logger.warning(
+            "Try running as Administrator, or manually: certutil -addstore Root %s",
+            ca_cert_path,
+        )
+        return False
+
+
+def _install_ca_linux(ca_cert_path: Path) -> bool:
+    logger.warning(
+        "Automatic CA install not supported on Linux. To trust the CA, run:\n"
+        "  sudo cp %s /usr/local/share/ca-certificates/mc-bridge-ca.crt\n"
+        "  sudo update-ca-certificates",
+        ca_cert_path,
+    )
+    return False
+
+
 def is_ca_trusted(ca_cert_path: Path) -> bool:
-    """Check if CA is already trusted in macOS keychain via `security verify-cert`."""
+    """Check if the CA is trusted in the OS trust store."""
     if not ca_cert_path.exists():
         return False
+    if sys.platform == "darwin":
+        return _is_ca_trusted_macos(ca_cert_path)
+    elif IS_WINDOWS:
+        return _is_ca_trusted_windows(ca_cert_path)
+    else:
+        # No reliable automated check on Linux
+        return False
+
+
+def _is_ca_trusted_macos(ca_cert_path: Path) -> bool:
     try:
         subprocess.run(
             ["security", "verify-cert", "-c", str(ca_cert_path)],
@@ -223,3 +292,37 @@ def is_ca_trusted(ca_cert_path: Path) -> bool:
         return True
     except subprocess.CalledProcessError:
         return False
+
+
+def _is_ca_trusted_windows(ca_cert_path: Path) -> bool:
+    """Check if CA is in the Windows Root store by matching subject CN."""
+    try:
+        result = subprocess.run(
+            ["certutil", "-store", "Root", "MC Bridge Local CA"],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0
+    except FileNotFoundError:
+        return False
+
+
+def ca_trust_guidance(ca_cert_path: Path) -> str:
+    """Return platform-specific instructions for manually trusting the CA."""
+    if sys.platform == "darwin":
+        return (
+            "CA certificate is not trusted. Run: "
+            "security add-trusted-cert -r trustRoot "
+            f"-k ~/Library/Keychains/login.keychain-db {ca_cert_path}"
+        )
+    elif IS_WINDOWS:
+        return (
+            "CA certificate is not trusted. Run (as Administrator): "
+            f"certutil -addstore Root {ca_cert_path}"
+        )
+    else:
+        return (
+            "CA certificate is not trusted. Run:\n"
+            f"  sudo cp {ca_cert_path} /usr/local/share/ca-certificates/mc-bridge-ca.crt\n"
+            "  sudo update-ca-certificates"
+        )

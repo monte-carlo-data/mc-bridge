@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from mc_bridge import __version__
-from mc_bridge.certs import CERTS_DIR, is_ca_trusted
+from mc_bridge.certs import CERTS_DIR, ca_trust_guidance, is_ca_trusted
 from mc_bridge.config import AnyConnectorConfig, config_manager
 from mc_bridge.connectors.base import BaseConnector
 from mc_bridge.models import (
@@ -185,11 +185,7 @@ def dashboard() -> DashboardResponse:
 
     guidance = None
     if not ca_trusted:
-        guidance = (
-            "CA certificate is not trusted. Run: "
-            "security add-trusted-cert -r trustRoot "
-            f"-k ~/Library/Keychains/login.keychain-db {ca_cert_path}"
-        )
+        guidance = ca_trust_guidance(ca_cert_path)
 
     return DashboardResponse(
         message="MC Bridge is running",

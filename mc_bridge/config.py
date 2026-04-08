@@ -91,9 +91,7 @@ def _infer_connector_type(connector_data: dict) -> str:
     return "snowflake"
 
 
-def _build_snowflake_config(
-    connector_id: str, data: dict
-) -> SnowflakeConnectorConfig:
+def _build_snowflake_config(connector_id: str, data: dict) -> SnowflakeConnectorConfig:
     return SnowflakeConnectorConfig(
         id=connector_id,
         name=data.get("name", connector_id),
@@ -111,9 +109,7 @@ def _build_snowflake_config(
     )
 
 
-def _build_bigquery_config(
-    connector_id: str, data: dict
-) -> BigQueryConnectorConfig:
+def _build_bigquery_config(connector_id: str, data: dict) -> BigQueryConnectorConfig:
     return BigQueryConnectorConfig(
         id=connector_id,
         name=data.get("name", connector_id),
@@ -128,9 +124,7 @@ def _build_bigquery_config(
     )
 
 
-def _build_redshift_config(
-    connector_id: str, data: dict
-) -> RedshiftConnectorConfig:
+def _build_redshift_config(connector_id: str, data: dict) -> RedshiftConnectorConfig:
     return RedshiftConnectorConfig(
         id=connector_id,
         name=data.get("name", connector_id),
@@ -190,11 +184,7 @@ def _parse_dbt_profiles() -> dict[str, dict] | None:
             # Copy all fields except type and threads, add type back explicitly
             connector: dict = {"type": target_type}
             connector.update(
-                {
-                    k: v
-                    for k, v in target_config.items()
-                    if k not in ("type", "threads")
-                }
+                {k: v for k, v in target_config.items() if k not in ("type", "threads")}
             )
             connectors[connector_id] = connector
 
@@ -250,11 +240,17 @@ def print_setup_instructions() -> None:
         print("=" * 60 + "\n")
         return
 
-    print("\nTo get started, create the config file:")
-    print(f"\n  mkdir -p {CONFIG_DIR}")
-    print(f"  cat > {CONFIG_FILE} << 'EOF'")
-    print(EXAMPLE_CONFIG + "EOF")
-    print("\nThen run mc-bridge again.")
+    print(f"\nTo get started, create the config file at:\n  {CONFIG_FILE}")
+    if sys.platform == "win32":
+        print(f'\n  mkdir "{CONFIG_DIR}"')
+        print(f'  notepad "{CONFIG_FILE}"')
+    else:
+        print(f"\n  mkdir -p {CONFIG_DIR}")
+        print(f"  cat > {CONFIG_FILE} << 'EOF'")
+        print(EXAMPLE_CONFIG + "EOF")
+    print("\nExample config:\n")
+    print(EXAMPLE_CONFIG)
+    print("Then run mc-bridge again.")
     print("=" * 60 + "\n")
     sys.exit(1)
 

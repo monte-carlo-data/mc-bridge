@@ -98,14 +98,6 @@ make lint      # Run linter
 make format    # Format code
 ```
 
-## Building Standalone App
-
-```bash
-make build     # Build app
-make open      # Open built app
-# Output: dist/MC Bridge.app
-```
-
 ## Security
 
 - Binds to `127.0.0.1` only
