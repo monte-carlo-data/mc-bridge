@@ -6,3 +6,5 @@ dist
 build
 server.log
 mc-bridge.testing.yaml
+.windows-ec2-state
+.envrc
