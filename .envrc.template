@@ -1,0 +1,13 @@
+# Copy to .envrc and fill in your values
+# Run `direnv allow` to load
+
+# AWS profile for EC2 operations
+export AWS_PROFILE=your-profile
+
+# Windows EC2 settings
+export AWS_REGION=us-east-1
+export WINDOWS_AMI=ami-05856bd26dd466893  # Windows Server 2022 Base
+export WINDOWS_INSTANCE_TYPE=t3.medium
+export WINDOWS_KEY_NAME=your-key-name
+export WINDOWS_VPC=vpc-xxxxxxxx
+export WINDOWS_SUBNET=subnet-xxxxxxxx
